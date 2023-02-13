@@ -7,6 +7,7 @@
 
 static int numberOfThreads;
 std::atomic<uintV> currentVertex;
+static int iterating;
 
 //array1 = the set of in neighbors for vertex in question u
 //len1 = the number of in neighbors for vertex u
@@ -246,18 +247,24 @@ uintV getNetVertexToBeProcessed(Graph &g){
   if(currentVertex < g.n_){
     index = std::atomic_fetch_add(&currentVertex,1);
   }else{
-    index = 0;
+    iterating = 0;
+    return 0;
   }
   return index;
 }
 
+//Status .. 
+//Right now I think I'm passing a node, but I think I have to try passing an index in the graph and then iterate through the graph that way.. 
+//So I need to change the data type of the global to inddex
+//Change the Get next vertex function to return and iterate the indexes
+//and change this function to get a node by index
 void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken){
   timer t2;
   t2.start();
   uintV u = getNetVertexToBeProcessed(g);
-    while(u) {
-    // For each outNeighbor v, find the intersection of inNeighbor(u) and
-    // outNeighbor(v)
+  std::cout << "Thread got initial vertex " << u << std::endl;
+  std::cout << "Out Degree of Initial Vertex =  " << g.vertices_[u].getOutDegree() << std::endl;
+    while(iterating) {
     uintE out_degree = g.vertices_[u].getOutDegree();
     for (uintE i = 0; i < out_degree; i++) {
       uintV v = g.vertices_[u].getOutNeighbor(i);
@@ -276,6 +283,7 @@ void triangleCountDynamicDriver(Graph &g) {
   long triangle_count = 0;
   double time_taken = 0.0;
   timer t1;
+  iterating = 1;
   std::thread threads[numberOfThreads];
   currentVertex.store(0);
   uintV Counter[numberOfThreads];
