@@ -6,6 +6,7 @@
 #include <thread>
 
 static int numberOfThreads;
+std::atomic<uintV> currentVertex;
 
 //array1 = the set of in neighbors for vertex in question u
 //len1 = the number of in neighbors for vertex u
@@ -18,7 +19,7 @@ long countTriangles(uintV *array1, uintE len1, uintV *array2, uintE len2,
 
   uintE i = 0, j = 0; // indexes for array1 and array2
   long count = 0;
-
+//
   //if u == v, meaning, if the neighbor of a vertex v is actually itself
   if (u == v)
     return count;
@@ -240,6 +241,80 @@ void triangleCountEdgeDriver(Graph &g) {
             << time_taken << "\n";
 }
 
+uintV getNetVertexToBeProcessed(Graph &g){
+  uintV index;
+  if(currentVertex < g.n_){
+    index = std::atomic_fetch_add(&currentVertex,1);
+  }else{
+    index = 0;
+  }
+  return index;
+}
+
+void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken){
+  timer t2;
+  t2.start();
+  uintV u = getNetVertexToBeProcessed(g);
+    while(u) {
+    // For each outNeighbor v, find the intersection of inNeighbor(u) and
+    // outNeighbor(v)
+    uintE out_degree = g.vertices_[u].getOutDegree();
+    for (uintE i = 0; i < out_degree; i++) {
+      uintV v = g.vertices_[u].getOutNeighbor(i);
+      triangle_count += countTriangles(g.vertices_[u].getInNeighbors(),
+                                       g.vertices_[u].getInDegree(),
+                                       g.vertices_[v].getOutNeighbors(),
+                                       g.vertices_[v].getOutDegree(), u, v);
+    }
+    uintV u = getNetVertexToBeProcessed(g);
+  }
+  time_taken = t2.stop();
+}
+
+void triangleCountDynamicDriver(Graph &g) {
+  uintV n = g.n_;
+  long triangle_count = 0;
+  double time_taken = 0.0;
+  timer t1;
+  std::thread threads[numberOfThreads];
+  currentVertex.store(0);
+  uintV Counter[numberOfThreads];
+  for(int i = 0; i < numberOfThreads; i++){
+    Counter[i] = 0;
+  }
+  double timers[numberOfThreads];
+  for(int i = 0; i < numberOfThreads; i++){
+    timers[i] = 0;
+  }
+
+  t1.start();
+
+  std::cout << "Spawning Threads" << std::endl;
+  for(int i = 0; i < numberOfThreads; i++){
+    threads[i] = std::thread(triangleCountDynamic,std::ref(g),std::ref(Counter[i]),std::ref(timers[i]));
+  }
+  std::cout << "Threads Spawned" << std::endl;
+  for(int i = 0; i < numberOfThreads; i++){
+    threads[i].join();
+  }
+
+  triangle_count = 0;
+  for(int i = 0; i < numberOfThreads; i++){
+    triangle_count += Counter[i];
+  }
+
+  time_taken = t1.stop();
+  std::cout << "thread_id, triangle_count, time_taken" << std::endl;
+  for(int i = numberOfThreads-1; i >= 0; i--){
+    std::cout << i << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
+  }
+  // Print the overall statistics
+  std::cout << "Number of triangles : " << triangle_count << "\n";
+  std::cout << "Number of unique triangles : " << triangle_count / 3 << "\n";
+  std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION)
+            << time_taken << "\n";
+}
+
 void triangleCountSerial(Graph &g) {
   uintV n = g.n_;
   long triangle_count = 0;
@@ -309,6 +384,7 @@ int main(int argc, char *argv[]) {
     break;
   case 3:
     std::cout << "\nDynamic task mapping\n";
+    triangleCountDynamicDriver(g);
     break;
   default:
     break;
