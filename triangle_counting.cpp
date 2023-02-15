@@ -6,7 +6,7 @@
 #include <thread>
 
 static int numberOfThreads;
-std::atomic<uintV> currentVertex;
+std::atomic<int> currentVertex;
 static int iterating;
 
 //array1 = the set of in neighbors for vertex in question u
@@ -250,10 +250,12 @@ uintV getNetVertexToBeProcessed(Graph &g){
     iterating = 0;
     return 0;
   }
+  if(currentVertex < 5){
+  }
   return index;
 }
 
-//Status .. 
+//Status ..   
 //Right now I think I'm passing a node, but I think I have to try passing an index in the graph and then iterate through the graph that way.. 
 //So I need to change the data type of the global to inddex
 //Change the Get next vertex function to return and iterate the indexes
@@ -261,10 +263,8 @@ uintV getNetVertexToBeProcessed(Graph &g){
 void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken){
   timer t2;
   t2.start();
-  uintV u = getNetVertexToBeProcessed(g);
-  std::cout << "Thread got initial vertex " << u << std::endl;
-  std::cout << "Out Degree of Initial Vertex =  " << g.vertices_[u].getOutDegree() << std::endl;
     while(iterating) {
+    uintV u = getNetVertexToBeProcessed(g);
     uintE out_degree = g.vertices_[u].getOutDegree();
     for (uintE i = 0; i < out_degree; i++) {
       uintV v = g.vertices_[u].getOutNeighbor(i);
@@ -273,7 +273,6 @@ void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken){
                                        g.vertices_[v].getOutNeighbors(),
                                        g.vertices_[v].getOutDegree(), u, v);
     }
-    uintV u = getNetVertexToBeProcessed(g);
   }
   time_taken = t2.stop();
 }
