@@ -20,17 +20,115 @@ typedef int64_t PageRankType;
 typedef float PageRankType;
 #endif
 
-void pageRankSerial(Graph &g, int max_iters) {
+static int numberOfThreads;
+static CustomBarrier* my_barrier;
+
+void pageRankParallel(uintV k, uintV n, int max_iters, std::atomic<PageRankType> *pr_curr, std::atomic<PageRankType> *pr_next, Graph &g, double& time_taken)
+{
+  timer t1;
+  time_taken = 0.0;
+  PageRankType tempRank;
+  std::thread::id this_id = std::this_thread::get_id();
+
+  t1.start();
+  for (int iter = 0; iter < max_iters; iter++){
+    for (uintV u = k; u < n; u++){
+      uintE out_degree = g.vertices_[u].getOutDegree();
+      for (uintE i = 0; i < out_degree; i++)
+      {
+        uintV v = g.vertices_[u].getOutNeighbor(i);
+        tempRank = pr_next[v];
+        while (!pr_next[v].compare_exchange_weak(tempRank, pr_next[v] + (pr_curr[u] / out_degree))){}
+      }
+    }
+    my_barrier->wait();
+    for (uintV v = k; v < n; v++){
+      pr_next[v] = PAGE_RANK(pr_next[v]);
+      pr_curr[v].store(pr_next[v]);
+      pr_next[v] = 0.0;
+    }
+    my_barrier->wait();
+  }
+  time_taken = t1.stop();
+}
+
+void pageRankParallelDriver(Graph &g, int max_iters)
+{
   uintV n = g.n_;
 
-  PageRankType *pr_curr = new PageRankType[n];
-  PageRankType *pr_next = new PageRankType[n];
+  std::atomic<PageRankType> *pr_curr = new std::atomic<PageRankType>[n];
+  std::atomic<PageRankType> *pr_next = new std::atomic<PageRankType>[n];
+  my_barrier = new CustomBarrier(numberOfThreads);
+  std::thread threads[numberOfThreads];
 
-  for (uintV i = 0; i < n; i++) {
+  for (uintV i = 0; i < n; i++)
+  {
     pr_curr[i] = INIT_PAGE_RANK;
     pr_next[i] = 0.0;
   }
 
+  double times[numberOfThreads];
+  double time_taken = 0;
+
+  double numThreads = (double) numberOfThreads;
+  double numVertexes = (double) n;
+  double start = 0;
+  double finish = 0;
+  uintV startCaster = 0;
+  uintV finishCaster = 0;
+
+  timer t2;
+  t2.start();
+  for (int i = 0; i < numberOfThreads; i++){
+    if(((start + numVertexes) / numThreads) < n){
+      finish = start + (numVertexes / numThreads);
+    }
+    else {
+      finish = numVertexes;
+    }
+    startCaster = (uintV) start;
+    finishCaster = (uintV) finish;
+    threads[i] = std::thread(pageRankParallel, startCaster, finishCaster, max_iters, std::ref(pr_curr), std::ref(pr_next), std::ref(g), std::ref(times[i]));
+    start = finish;
+  }
+  for(int i = 0; i < numberOfThreads; i++){
+    threads[i].join();
+  }
+  time_taken = t2.stop();
+
+  // -------------------------------------------------------------------
+  // std::cout << "thread_id, time_taken\n";
+  // Print the above statistics for each thread
+  // Example output for 2 threads:
+  // thread_id, time_taken
+  // 0, 0.12
+  // 1, 0.12
+  std::cout << "thread_id, time taken" << std::endl;
+  for (int i = 0; i < numberOfThreads; i++)
+  {
+    std::cout << i << " " << times[i] << std::endl;
+  }
+//
+  PageRankType sum_of_page_ranks = 0;
+  for (uintV u = 0; u < n; u++)
+  {
+    sum_of_page_ranks += pr_curr[u];
+  }
+  std::cout << "Sum of page rank : " << sum_of_page_ranks << "\n";
+  std::cout << "Time taken (in seconds) : " << time_taken << "\n";
+  delete[] pr_curr;
+  delete[] pr_next;
+}
+
+
+void pageRankSerial(Graph &g, int max_iters) {
+  uintV n = g.n_;
+  PageRankType *pr_curr = new PageRankType[n];
+  PageRankType *pr_next = new PageRankType[n];
+  for (uintV i = 0; i < n; i++) {
+    pr_curr[i] = INIT_PAGE_RANK;
+    pr_next[i] = 0.0;
+  }
   // Push based pagerank
   timer t1;
   double time_taken = 0.0;
@@ -56,7 +154,6 @@ void pageRankSerial(Graph &g, int max_iters) {
   }
   time_taken = t1.stop();
   // -------------------------------------------------------------------
-
   PageRankType sum_of_page_ranks = 0;
   for (uintV u = 0; u < n; u++) {
     sum_of_page_ranks += pr_curr[u];
@@ -101,8 +198,8 @@ int main(int argc, char *argv[]) {
 #endif
   std::cout << std::fixed;
   std::cout << "Number of workers : " << n_workers << "\n";
+  numberOfThreads = n_workers;
   std::cout << "Task decomposition strategy : " << strategy << "\n";
-  std::cout << "Iterations : " << max_iterations << "\n";
   std::cout << "Iterations : " << max_iterations << "\n";
   std::cout << "Granularity : " << granularity << "\n";
 
@@ -117,6 +214,7 @@ int main(int argc, char *argv[]) {
     break;
   case 1:
     std::cout << "\nVertex-based work partitioning\n";
+    pageRankParallelDriver(g, max_iterations);
     break;
   case 2:
     std::cout << "\nEdge-based work partitioning\n";
