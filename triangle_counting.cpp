@@ -49,13 +49,15 @@ long countTriangles(uintV *array1, uintE len1, uintV *array2, uintE len2,
   return count;
 }
 
-void triangleCountParallel(uintV start, uintV finish, Graph &g, uintV n, uintV& triangle_count,double& time_taken){
+void triangleCountParallel(uintV start, uintV finish, Graph &g, uintV n, uintV& triangle_count,double& time_taken, uintE& edges_counted, uintV& vertices_counted){
   timer t2;
   t2.start();
     for (uintV u = start; u < finish; u++) {
+      vertices_counted++;
     // For each outNeighbor v, find the intersection of inNeighbor(u) and
     // outNeighbor(v)
     uintE out_degree = g.vertices_[u].getOutDegree();
+    edges_counted += out_degree;
     for (uintE i = 0; i < out_degree; i++) {
       uintV v = g.vertices_[u].getOutNeighbor(i);
       triangle_count += countTriangles(g.vertices_[u].getInNeighbors(),
@@ -86,11 +88,21 @@ void triangleCountVertexDriver(Graph &g) {
   double finish = 0;
   uintV startCaster = 0;
   uintV finishCaster = 0;
+  int startVertex[numberOfThreads];
+  int finishVertex[numberOfThreads];
   std::thread threads[numberOfThreads];
   double timers[numberOfThreads];
+  uintV verticesCounted[numberOfThreads];
   for(int i = 0; i < numberOfThreads; i++){
     timers[i] = 0;
+    verticesCounted[i] = 0;
   }
+  uintE edgesCounted[numberOfThreads];
+  for(int i = 0; i < numberOfThreads; i++){
+    edgesCounted[i] = 0;
+  }
+  double time_taken_decomp = 0.0;
+  timer t2;
 
   t1.start();
   // Process each edge <u,v>
@@ -103,7 +115,9 @@ void triangleCountVertexDriver(Graph &g) {
     }
     startCaster = (uintV) start;
     finishCaster = (uintV) finish;
-    threads[i] = std::thread(triangleCountParallel,startCaster,finishCaster,std::ref(g),n,std::ref(Counter[i]),std::ref(timers[i]));
+    t2.start();
+    threads[i] = std::thread(triangleCountParallel,startCaster,finishCaster,std::ref(g),n,std::ref(Counter[i]),std::ref(timers[i]),std::ref(edgesCounted[i]),std::ref(verticesCounted[i]));
+    time_taken_decomp += t2.stop();
     start = finish;
   }
   for(int i = 0; i < numberOfThreads; i++){
@@ -121,14 +135,16 @@ void triangleCountVertexDriver(Graph &g) {
   // thread std::cout << "thread_id, triangle_count, time_taken\n"; Print the
   // above statistics for each thread Example output for 2 threads: thread_id,
   // triangle_count, time_taken 1, 102, 0.12 0, 100, 0.12
-  std::cout << "thread_id, triangle_count, time_taken" << std::endl;
-  for(int i = numberOfThreads-1; i >= 0; i--){
-    std::cout << i << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
+  std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken" << std::endl;
+  for(int i = 0; i < numberOfThreads; i++){
+    std::cout << i << ", " << verticesCounted[i] << ", " << edgesCounted[i]<< ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
   }
 
   // Print the overall statistics
   std::cout << "Number of triangles : " << triangle_count << "\n";
   std::cout << "Number of unique triangles : " << triangle_count / 3 << "\n";
+  std::cout << "Partitioning time (in seconds) : " << std::setprecision(TIME_PRECISION)
+            << time_taken_decomp << "\n";
   std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION)
             << time_taken << "\n";
 }
@@ -177,12 +193,18 @@ void triangleCountEdgeDriver(Graph &g) {
   uintE currentEdge = 0;
   int edgeIterator = 0;
   uintV Counter[numberOfThreads];
+  uintV verticesCounted[numberOfThreads];
   for(int i = 0; i < numberOfThreads; i++){
     Counter[i] = 0;
+    verticesCounted[i] = 0;
   }
   double timers[numberOfThreads];
   for(int i = 0; i < numberOfThreads; i++){
     timers[i] = 0;
+  }
+  uintE edgesCounted[numberOfThreads];
+  for(int i = 0; i < numberOfThreads; i++){
+    edgesCounted[i] = 0;
   }
 
 
@@ -211,9 +233,13 @@ void triangleCountEdgeDriver(Graph &g) {
 
  // std::cout << "here" << std::endl;
 
+  double time_taken_decomp = 0.0;
+  timer t2;
+  t2.start();
   for(int i = 0; i < numberOfThreads; i++){
-    threads[i] = std::thread(triangleCountParallel,vertexStart[i],vertexEnd[i],std::ref(g),n,std::ref(Counter[i]),std::ref(timers[i]));
+    threads[i] = std::thread(triangleCountParallel,vertexStart[i],vertexEnd[i],std::ref(g),n,std::ref(Counter[i]),std::ref(timers[i]),std::ref(edgesCounted[i]),std::ref(verticesCounted[i]));
   }
+  time_taken_decomp = t2.stop();
 
   for(int i = 0; i < numberOfThreads; i++){
     threads[i].join();
@@ -230,14 +256,16 @@ void triangleCountEdgeDriver(Graph &g) {
   // thread std::cout << "thread_id, triangle_count, time_taken\n"; Print the
   // above statistics for each thread Example output for 2 threads: thread_id,
   // triangle_count, time_taken 1, 102, 0.12 0, 100, 0.12
-  std::cout << "thread_id, triangle_count, time_taken" << std::endl;
-  for(int i = numberOfThreads-1; i >= 0; i--){
-    std::cout << i << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
+  std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken" << std::endl;
+  for(int i = 0; i < numberOfThreads; i++){
+    std::cout << i << ", " << "0" << ", " << edgesCounted[i] << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
   }
 
   // Print the overall statistics
   std::cout << "Number of triangles : " << triangle_count << "\n";
   std::cout << "Number of unique triangles : " << triangle_count / 3 << "\n";
+    std::cout << "Partitioning time (in seconds) : " << std::setprecision(TIME_PRECISION)
+            << time_taken_decomp << "\n";
   std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION)
             << time_taken << "\n";
 }
@@ -260,12 +288,14 @@ uintV getNetVertexToBeProcessed(Graph &g){
 //So I need to change the data type of the global to inddex
 //Change the Get next vertex function to return and iterate the indexes
 //and change this function to get a node by index
-void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken){
+void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken, uintE& edges_counted, uintV& verticesCounted){
   timer t2;
   t2.start();
     while(iterating) {
+    verticesCounted++;
     uintV u = getNetVertexToBeProcessed(g);
     uintE out_degree = g.vertices_[u].getOutDegree();
+    edges_counted += out_degree;
     for (uintE i = 0; i < out_degree; i++) {
       uintV v = g.vertices_[u].getOutNeighbor(i);
       triangle_count += countTriangles(g.vertices_[u].getInNeighbors(),
@@ -281,25 +311,31 @@ void triangleCountDynamicDriver(Graph &g) {
   uintV n = g.n_;
   long triangle_count = 0;
   double time_taken = 0.0;
+  double time_taken_decomp = 0.0;
   timer t1;
+  timer t2;
   iterating = 1;
   std::thread threads[numberOfThreads];
   currentVertex.store(0);
   uintV Counter[numberOfThreads];
-  for(int i = 0; i < numberOfThreads; i++){
-    Counter[i] = 0;
-  }
   double timers[numberOfThreads];
+  uintE edgesCounted[numberOfThreads];
+  uintV verticesCounted[numberOfThreads];
   for(int i = 0; i < numberOfThreads; i++){
+    edgesCounted[i] = 0;
+    verticesCounted[i] = 0;
     timers[i] = 0;
+    Counter[i] = 0;
   }
 
   t1.start();
 
   std::cout << "Spawning Threads" << std::endl;
+  t2.start();
   for(int i = 0; i < numberOfThreads; i++){
-    threads[i] = std::thread(triangleCountDynamic,std::ref(g),std::ref(Counter[i]),std::ref(timers[i]));
+    threads[i] = std::thread(triangleCountDynamic,std::ref(g),std::ref(Counter[i]),std::ref(timers[i]),std::ref(edgesCounted[i]),std::ref(verticesCounted[i]));
   }
+  time_taken_decomp = t2.stop();
   std::cout << "Threads Spawned" << std::endl;
   for(int i = 0; i < numberOfThreads; i++){
     threads[i].join();
@@ -311,13 +347,14 @@ void triangleCountDynamicDriver(Graph &g) {
   }
 
   time_taken = t1.stop();
-  std::cout << "thread_id, triangle_count, time_taken" << std::endl;
-  for(int i = numberOfThreads-1; i >= 0; i--){
-    std::cout << i << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
+  std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken" << std::endl;
+  for(int i = 0; i < numberOfThreads; i++){
+    std::cout << i << ", " << verticesCounted[i] << ", " << edgesCounted[i] << ", " << Counter[i] << ", " << timers[i] << ", " << std::endl; 
   }
   // Print the overall statistics
   std::cout << "Number of triangles : " << triangle_count << "\n";
   std::cout << "Number of unique triangles : " << triangle_count / 3 << "\n";
+  std::cout << "Partitioning time (in seconds) : " << std::setprecision(TIME_PRECISION) << time_taken_decomp << std::endl;
   std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION)
             << time_taken << "\n";
 }
