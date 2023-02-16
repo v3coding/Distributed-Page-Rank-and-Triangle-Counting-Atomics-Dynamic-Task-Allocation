@@ -52,8 +52,7 @@ void pageRankParallel(uintV k, uintV n, int max_iters, std::atomic<PageRankType>
   time_taken = t1.stop();
 }
 
-void pageRankParallelDriver(Graph &g, int max_iters)
-{
+void pageRankParallelDriver(Graph &g, int max_iters){
   uintV n = g.n_;
 
   std::atomic<PageRankType> *pr_curr = new std::atomic<PageRankType>[n];
@@ -120,6 +119,129 @@ void pageRankParallelDriver(Graph &g, int max_iters)
   delete[] pr_next;
 }
 
+void pageRankEdgeDriver(Graph &g, int max_iters){
+  uintV n = g.n_;
+
+  std::atomic<PageRankType> *pr_curr = new std::atomic<PageRankType>[n];
+  std::atomic<PageRankType> *pr_next = new std::atomic<PageRankType>[n];
+  my_barrier = new CustomBarrier(numberOfThreads);
+  std::thread threads[numberOfThreads];
+  int startVertex[numberOfThreads];
+  int finishVertex[numberOfThreads];
+  double timers[numberOfThreads];
+  uintV verticesCounted[numberOfThreads];
+  uintE edgesCounted[numberOfThreads];
+  for(int i = 0; i < numberOfThreads; i++){
+    timers[i] = 0;
+    verticesCounted[i] = 0;
+    edgesCounted[i] = 0;
+  }
+
+  for (uintV i = 0; i < n; i++)
+  {
+    pr_curr[i] = INIT_PAGE_RANK;
+    pr_next[i] = 0.0;
+  }
+
+  double times[numberOfThreads];
+  double time_taken = 0;
+
+  double numThreads = (double) numberOfThreads;
+  double numVertexes = (double) n;
+  double start = 0;
+  double finish = 0;
+  uintV startCaster = 0;
+  uintV finishCaster = 0;
+
+  double numEdges = g.m_;
+
+  int edgeStart[numberOfThreads];
+  int edgeEnd[numberOfThreads];
+  uintV vertexStart[numberOfThreads];
+  uintV vertexEnd[numberOfThreads];
+  double edges = g.m_;
+
+  for(int i = 0; i < numberOfThreads; i++){
+    edgeStart[i] = 0;
+    edgeEnd[i] = 0;
+    vertexStart[i] = 0;
+    vertexEnd[i] = 0;
+  }
+
+  for (int i = 0; i < numberOfThreads; i++){
+    if(((start + numEdges) / numThreads) < edges){
+      finish = start + (numEdges / numThreads);
+    }
+    else {
+      finish = numEdges;
+    }
+    edgeStart[i] = start;
+    edgeEnd[i] = finish;
+    start = finish;
+  }
+
+  int edgeIterator = 0;
+  uintE currentEdge = 0;
+
+  for(uintV x = 0; x < n; x++){
+    currentEdge += g.vertices_[x].getOutDegree();
+      if(currentEdge >= edgeEnd[edgeIterator]){
+        vertexEnd[edgeIterator] = x;
+        edgeIterator++;
+        vertexStart[edgeIterator] = x;
+      }
+      if(edgeIterator == numberOfThreads-1){
+        x = n;
+        vertexEnd[numberOfThreads-1] = n;
+      }
+  }
+
+  for(int i = 0; i < numberOfThreads; i++){
+    std::cout << "Thread " << i << " will begin at " << vertexStart[i] << " and end at " << vertexEnd[i] << " covering edges from " << edgeStart[i] << " to " << edgeEnd[i] << std::endl;
+  }
+
+  timer t2;
+  t2.start();
+  for (int i = 0; i < numberOfThreads; i++){
+    if(((start + numVertexes) / numThreads) < n){
+      finish = start + (numVertexes / numThreads);
+    }
+    else {
+      finish = numVertexes;
+    }
+    startCaster = (uintV) start;
+    finishCaster = (uintV) finish;
+    threads[i] = std::thread(pageRankParallel, vertexStart[i], vertexEnd[i], max_iters, std::ref(pr_curr), std::ref(pr_next), std::ref(g), std::ref(times[i]));
+    start = finish;
+  }
+  for(int i = 0; i < numberOfThreads; i++){
+    threads[i].join();
+  }
+  time_taken = t2.stop();
+
+  // -------------------------------------------------------------------
+  // std::cout << "thread_id, time_taken\n";
+  // Print the above statistics for each thread
+  // Example output for 2 threads:
+  // thread_id, time_taken
+  // 0, 0.12
+  // 1, 0.12
+  std::cout << "thread_id, time taken" << std::endl;
+  for (int i = 0; i < numberOfThreads; i++)
+  {
+    std::cout << i << " " << times[i] << std::endl;
+  }
+//
+  PageRankType sum_of_page_ranks = 0;
+  for (uintV u = 0; u < n; u++)
+  {
+    sum_of_page_ranks += pr_curr[u];
+  }
+  std::cout << "Sum of page rank : " << sum_of_page_ranks << "\n";
+  std::cout << "Time taken (in seconds) : " << time_taken << "\n";
+  delete[] pr_curr;
+  delete[] pr_next;
+}
 
 void pageRankSerial(Graph &g, int max_iters) {
   uintV n = g.n_;
@@ -218,6 +340,7 @@ int main(int argc, char *argv[]) {
     break;
   case 2:
     std::cout << "\nEdge-based work partitioning\n";
+    pageRankEdgeDriver(g, max_iterations);
     break;
   case 3:
     std::cout << "\nDynamic task mapping\n";
