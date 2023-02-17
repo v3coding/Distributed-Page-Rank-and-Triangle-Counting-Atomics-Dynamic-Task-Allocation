@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <thread>
+#include <unistd.h>
 
 #ifdef USE_INT
 #define INIT_PAGE_RANK 100000
@@ -22,6 +23,9 @@ typedef float PageRankType;
 
 static int numberOfThreads;
 static CustomBarrier* my_barrier;
+static int iterating;
+std::atomic<int> currentVertex;
+static uintV granularityInt;
 
 void pageRankParallel(uintV k, uintV n, int max_iters, std::atomic<PageRankType> *pr_curr, std::atomic<PageRankType> *pr_next, Graph &g, double& time_taken)
 {
@@ -243,6 +247,140 @@ void pageRankEdgeDriver(Graph &g, int max_iters){
   delete[] pr_next;
 }
 
+uintV getNextVertexToBeProcessed(Graph &g){
+  uintV index;
+  if(currentVertex < g.n_){
+    index = std::atomic_fetch_add(&currentVertex,granularityInt);
+  }else{
+    return -1;
+  }
+  return index;
+}
+
+void pageRankDynamic(int max_iters, std::atomic<PageRankType> *pr_curr, std::atomic<PageRankType> *pr_next, Graph &g, double& time_taken, int& verticiesComputed){
+  timer t1;
+  uintV n = g.n_;
+  time_taken = 0.0;
+  PageRankType tempRank;
+  uintV u = 1;
+  int touched[n];
+  for(int i = 0; i < n; i++){
+    touched[i] = 0;
+  }
+  uintV end = 0;
+
+  t1.start();
+  for (int iter = 0; iter < max_iters; iter++){
+    //for each iter, dynamically grab each edge?
+    u = getNextVertexToBeProcessed(g);
+   // std::cout << "Starting at .. " << u << std::endl;
+    while(u >= 0){
+      if(u + granularityInt < n){
+        end = granularityInt;
+       // std::cout << "end outer = " << end << std::endl;
+      } else{
+        end = n - u;
+      //  std::cout << "end = " << end << std::endl;
+      }
+      for(int i = 0; i < end; i++){
+        touched[u] = 1;
+        verticiesComputed++;
+        uintE out_degree = g.vertices_[u].getOutDegree();
+        for (uintE i = 0; i < out_degree; i++){
+          uintV v = g.vertices_[u].getOutNeighbor(i);
+          tempRank = pr_next[v];
+          while (!pr_next[v].compare_exchange_weak(tempRank, pr_next[v] + (pr_curr[u] / out_degree))){}
+        }
+        u++;
+      }
+      u = getNextVertexToBeProcessed(g);
+  }
+    my_barrier->wait();
+
+    for(int i = 0; i < n; i++){
+      if(touched[i] == 1){
+        pr_next[i] = PAGE_RANK(pr_next[i]);
+        pr_curr[i].store(pr_next[i]);
+        pr_next[i] = 0.0;
+        touched[i] = 0;
+      }
+    }
+    my_barrier->wait();
+    currentVertex = 0;
+    my_barrier->wait();
+//-------------------
+  }
+  time_taken = t1.stop();
+}
+
+void pageRankDynamicDriver(Graph &g, int max_iters){
+  uintV n = g.n_;
+  iterating = 1;
+  currentVertex.store(0);
+
+  std::atomic<PageRankType> *pr_curr = new std::atomic<PageRankType>[n];
+  std::atomic<PageRankType> *pr_next = new std::atomic<PageRankType>[n];
+  my_barrier = new CustomBarrier(numberOfThreads);
+  std::thread threads[numberOfThreads];
+  int verticesComputed[numberOfThreads];
+
+  for(int i = 0; i < numberOfThreads; i++){
+    verticesComputed[i] = 0;
+  }
+
+  for (uintV i = 0; i < n; i++)
+  {
+    pr_curr[i] = INIT_PAGE_RANK;
+    pr_next[i] = 0.0;
+  }
+
+  double times[numberOfThreads];
+  double time_taken = 0;
+
+  timer t2;
+  t2.start();
+  for (int i = 0; i < numberOfThreads; i++){
+    threads[i] = std::thread(pageRankDynamic, max_iters, std::ref(pr_curr), std::ref(pr_next), std::ref(g), std::ref(times[i]),std::ref(verticesComputed[i]));
+  }
+  for(int i = 0; i < numberOfThreads; i++){
+    threads[i].join();
+  }
+
+  int total_vertices = 0;
+  for(int i = 0; i < numberOfThreads; i++){
+    std::cout << "The number of vertices computed for thread " << i << " is " << verticesComputed[i] << std::endl;
+    total_vertices += verticesComputed[i];
+  }
+  std::cout << "And the total number of vertices computed was " << total_vertices << std::endl;
+  std::cout << "And the total number of vertices in the graph was " << g.n_ << std::endl;
+
+  time_taken = t2.stop();
+
+  // -------------------------------------------------------------------
+  // std::cout << "thread_id, time_taken\n";
+  // Print the above statistics for each thread
+  // Example output for 2 threads:
+  // thread_id, time_taken
+  // 0, 0.12
+  // 1, 0.12
+  std::cout << "thread_id, time taken" << std::endl;
+  for (int i = 0; i < numberOfThreads; i++)
+  {
+    std::cout << i << " " << times[i] << std::endl;
+  }
+//
+  PageRankType sum_of_page_ranks = 0;
+  for (uintV u = 0; u < n; u++)
+  {
+    sum_of_page_ranks += pr_curr[u];
+  }
+  std::cout << "Sum of page rank : " << sum_of_page_ranks << "\n";
+  std::cout << "Time taken (in seconds) : " << time_taken << "\n";
+  delete[] pr_curr;
+  delete[] pr_next;
+}
+
+
 void pageRankSerial(Graph &g, int max_iters) {
   uintV n = g.n_;
   PageRankType *pr_curr = new PageRankType[n];
@@ -310,9 +448,12 @@ int main(int argc, char *argv[]) {
   uint n_workers = cl_options["nWorkers"].as<uint>();
   uint strategy = cl_options["strategy"].as<uint>();
   uint max_iterations = cl_options["nIterations"].as<uint>();
+  granularityInt = 1;
   uint granularity = cl_options["granularity"].as<uint>();
+  granularityInt = granularity;
+  std::cout << "Granularity int = " << granularityInt << std::endl;
   std::string input_file_path = cl_options["inputFile"].as<std::string>();
-
+//
 #ifdef USE_INT
   std::cout << "Using INT\n";
 #else
@@ -344,6 +485,7 @@ int main(int argc, char *argv[]) {
     break;
   case 3:
     std::cout << "\nDynamic task mapping\n";
+    pageRankDynamicDriver(g, max_iterations);
     break;
   default:
     break;
