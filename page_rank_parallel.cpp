@@ -99,13 +99,6 @@ void pageRankParallelDriver(Graph &g, int max_iters){
   }
   time_taken = t2.stop();
 
-  // -------------------------------------------------------------------
-  // std::cout << "thread_id, time_taken\n";
-  // Print the above statistics for each thread
-  // Example output for 2 threads:
-  // thread_id, time_taken
-  // 0, 0.12
-  // 1, 0.12
   std::cout << "thread_id, time taken" << std::endl;
   for (int i = 0; i < numberOfThreads; i++)
   {
@@ -317,7 +310,6 @@ void pageRankDynamicDriver(Graph &g, int max_iters){
   uintV n = g.n_;
   iterating = 1;
   currentVertex.store(0);
-
   std::atomic<PageRankType> *pr_curr = new std::atomic<PageRankType>[n];
   std::atomic<PageRankType> *pr_next = new std::atomic<PageRankType>[n];
   my_barrier = new CustomBarrier(numberOfThreads);
@@ -336,16 +328,15 @@ void pageRankDynamicDriver(Graph &g, int max_iters){
 
   double times[numberOfThreads];
   double time_taken = 0;
-
   timer t2;
   t2.start();
+
   for (int i = 0; i < numberOfThreads; i++){
     threads[i] = std::thread(pageRankDynamic, max_iters, std::ref(pr_curr), std::ref(pr_next), std::ref(g), std::ref(times[i]),std::ref(verticesComputed[i]));
   }
   for(int i = 0; i < numberOfThreads; i++){
     threads[i].join();
   }
-
   int total_vertices = 0;
   for(int i = 0; i < numberOfThreads; i++){
     std::cout << "The number of vertices computed for thread " << i << " is " << verticesComputed[i] << std::endl;
@@ -353,16 +344,7 @@ void pageRankDynamicDriver(Graph &g, int max_iters){
   }
   std::cout << "And the total number of vertices computed was " << total_vertices << std::endl;
   std::cout << "And the total number of vertices in the graph was " << g.n_ << std::endl;
-
   time_taken = t2.stop();
-
-  // -------------------------------------------------------------------
-  // std::cout << "thread_id, time_taken\n";
-  // Print the above statistics for each thread
-  // Example output for 2 threads:
-  // thread_id, time_taken
-  // 0, 0.12
-  // 1, 0.12
   std::cout << "thread_id, time taken" << std::endl;
   for (int i = 0; i < numberOfThreads; i++)
   {

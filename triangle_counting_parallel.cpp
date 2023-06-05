@@ -79,7 +79,6 @@ void triangleCountVertexDriver(Graph &g) {
     Counter[i] = 0;
   }
   // The outNghs and inNghs for a given vertex are already sorted
-
   // Create threads and distribute the work across T threads
   // -------------------------------------------------------------------
   double numThreads = (double) numberOfThreads;
@@ -130,11 +129,7 @@ void triangleCountVertexDriver(Graph &g) {
   for(int i = 0; i < numberOfThreads; i++){
     triangle_count += Counter[i];
   }
-  // -------------------------------------------------------------------
-  // Here, you can just print the number of non-unique triangles counted by each
-  // thread std::cout << "thread_id, triangle_count, time_taken\n"; Print the
-  // above statistics for each thread Example output for 2 threads: thread_id,
-  // triangle_count, time_taken 1, 102, 0.12 0, 100, 0.12
+
   std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken" << std::endl;
   for(int i = 0; i < numberOfThreads; i++){
     std::cout << i << ", " << verticesCounted[i] << ", " << edgesCounted[i]<< ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
@@ -224,14 +219,7 @@ void triangleCountEdgeDriver(Graph &g) {
         vertexEnd[numberOfThreads-1] = n;
       }
   }
-  //std::cout << "Total number of verticies = " << g.n_ << std::endl;
-  //for(int i = 0; i < numberOfThreads; i++){
-  //  std::cout << "Thread " << i << " will beging iterate from vertex " << vertexStart[i] << " to vertex " << vertexEnd[i] << " covering edges from " << edgeStart[i] << " to " << edgeEnd[i] << std::endl;
-  //}
-
   t1.start();
-
- // std::cout << "here" << std::endl;
 
   double time_taken_decomp = 0.0;
   timer t2;
@@ -251,11 +239,6 @@ void triangleCountEdgeDriver(Graph &g) {
   for(int i = 0; i < numberOfThreads; i++){
     triangle_count += Counter[i];
   }
-  // -------------------------------------------------------------------
-  // Here, you can just print the number of non-unique triangles counted by each
-  // thread std::cout << "thread_id, triangle_count, time_taken\n"; Print the
-  // above statistics for each thread Example output for 2 threads: thread_id,
-  // triangle_count, time_taken 1, 102, 0.12 0, 100, 0.12
   std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken" << std::endl;
   for(int i = 0; i < numberOfThreads; i++){
     std::cout << i << ", " << "0" << ", " << edgesCounted[i] << ", " << Counter[i] << ", " << timers[i] << " " << std::endl; 
@@ -283,11 +266,6 @@ uintV getNetVertexToBeProcessed(Graph &g){
   return index;
 }
 
-//Status ..   
-//Right now I think I'm passing a node, but I think I have to try passing an index in the graph and then iterate through the graph that way.. 
-//So I need to change the data type of the global to inddex
-//Change the Get next vertex function to return and iterate the indexes
-//and change this function to get a node by index
 void triangleCountDynamic(Graph &g, uintV& triangle_count,double& time_taken, uintE& edges_counted, uintV& verticesCounted){
   timer t2;
   t2.start();
